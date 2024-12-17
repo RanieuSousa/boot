@@ -1,0 +1,54 @@
+{
+  "menu": [
+    {
+      "name": "Clientes",
+      "icon": "menu-icon tf-icons bx bx-group",
+      "slug": "forms",
+      "submenu": [
+        {
+          "url": "clientes",
+          "name": "Clientes",
+          "slug": "forms-basic-inputs"
+        },
+        {
+          "url": "clientes/potencial",
+          "name": "Clientes potenciais",
+          "slug": "forms-input-groups"
+        }
+      ]
+    },
+
+
+    {
+      "name": "Configurações",
+      "icon": "menu-icon tf-icons bx bx-cog",
+      "slug": "form-layouts",
+      "submenu": [
+        {
+          "url": "users",
+          "name": "Usuários",
+          "slug": "forms-basic-inputs"
+        },
+
+        {
+          "url": "mensagem",
+          "name": "Mensagem",
+          "slug": "form-layouts-vertical"
+        },
+        {
+          "url": "ciclus",
+          "name": "Ciclus ",
+          "slug": "form-layouts-horizontal"
+        },
+        {
+          "url": "mail-config",
+          "name": "Configuração de email",
+          "slug": "form-layouts-horizontal"
+        }
+      ]
+    }
+
+
+
+  ]
+}
