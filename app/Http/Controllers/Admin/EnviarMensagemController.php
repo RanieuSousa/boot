@@ -26,7 +26,7 @@ class EnviarMensagemController extends Controller
    *
    * @return \Illuminate\Http\JsonResponse
    */
-  public function email()
+ /* public function email()
   {
     // Recupera os clientes potenciais que não compraram nos últimos 30 dias e cujo valor é maior que 50000
     $clientesPotenciais = DB::table('cliente_potencial')
@@ -91,7 +91,112 @@ class EnviarMensagemController extends Controller
 
     // Retorna uma resposta JSON indicando que os e-mails foram enviados com sucesso
     return response()->json(['message' => 'E-mails enviados com sucesso!']);
+  }*/
+  public function email()
+  {
+    // Recupera os clientes potenciais que não compraram nos últimos 30 dias e cujo valor é maior que 50000
+    $clientesPotenciais = DB::table('cliente_potencial')
+      ->where('ultima_compra', '<', DB::raw('NOW() - INTERVAL 30 DAY'))
+      ->where('status', 1) // Considera apenas os clientes com status 1
+      ->where('valor', '>', 50000)
+      ->get();
+
+    // Recupera os usuários (vendedores) que fazem parte de grupos e empresas
+    $usuarios = User::select(
+      'users.id as user_id',
+      'users.name as user_name',
+      'users.email as user_email',
+      'grupos.nome as grupo_nome',
+      'empresa.nome as empresa_nome'
+    )
+      ->leftJoin('grupo_users', 'grupo_users.users_id', '=', 'users.id')
+      ->leftJoin('grupos', 'grupos.id', '=', 'grupo_users.grupo_id')
+      ->leftJoin('empresa_users', 'empresa_users.users_id', '=', 'users.id')
+      ->leftJoin('empresa', 'empresa.id', '=', 'empresa_users.empresa_id')
+      ->where('type', 1) // Filtra para usuários do tipo 1
+      ->get();
+
+    // Organiza os usuários por grupo
+    $usuariosPorGrupo = [];
+    foreach ($usuarios as $usuario) {
+      $usuariosPorGrupo[$usuario->grupo_nome][] = $usuario;
+    }
+
+    // Recupera a mensagem de alerta que será enviada por e-mail
+    $mensagem = Mensagem::where('tipo', 1)->first();
+
+    // Se a mensagem não for encontrada, retorna erro
+    if (!$mensagem) {
+      return response()->json(['error' => 'Mensagem não encontrada'], 404);
+    }
+
+    // Loop através dos grupos
+    foreach ($usuariosPorGrupo as $grupoNome => $usuariosGrupo) {
+      // Filtra os clientes potenciais do grupo atual
+      $clientesDoGrupo = $clientesPotenciais->filter(function ($cliente) use ($grupoNome) {
+        return $cliente->vendedor === $grupoNome;
+      });
+
+      // Calcula a quantidade de clientes por usuário
+      $totalClientes = $clientesDoGrupo->count();
+      $totalUsuarios = count($usuariosGrupo);
+      $clientesPorUsuario = intdiv($totalClientes, $totalUsuarios);
+      $clientesSobrando = $totalClientes % $totalUsuarios;
+
+      // Distribui os clientes entre os usuários
+      $clientesDistribuidos = [];
+      $clientesIterator = $clientesDoGrupo->all();
+      foreach ($usuariosGrupo as $index => $usuario) {
+        $quantidadeClientes = $clientesPorUsuario + ($clientesSobrando > 0 ? 1 : 0);
+        $clientesDistribuidos[$usuario->user_id] = array_splice($clientesIterator, 0, $quantidadeClientes);
+        if ($clientesSobrando > 0) {
+          $clientesSobrando--;
+        }
+      }
+
+      // Envia os e-mails para os usuários
+      foreach ($usuariosGrupo as $usuario) {
+        $clientesDoUsuario = $clientesDistribuidos[$usuario->user_id] ?? [];
+
+        if (!empty($clientesDoUsuario)) {
+          // Gera a tabela HTML com a lista de clientes
+          $tabelaClientes = '<table border="1" cellspacing="0" cellpadding="5">';
+          $tabelaClientes .= '<tr><th>Código</th><th>Nome</th><th>Última Compra</th></tr>';
+          foreach ($clientesDoUsuario as $cliente) {
+            $tabelaClientes .= "<tr>
+                        <td>{$cliente->cliente_id}</td>
+                        <td>{$cliente->nome}</td>
+                        <td>" . Carbon::parse($cliente->ultima_compra)->format('d/m/Y H:i:s') . "</td>
+                    </tr>";
+          }
+          $tabelaClientes .= '</table>';
+
+          // Monta a mensagem final substituindo os valores
+          $mensagemFinal = "<h1>Olá {$usuario->user_name},</h1>";
+          $mensagemFinal .= "<p>Gostaria de informar que os clientes da lista abaixo estão há mais de 30 dias sem realizar compras em nossa loja.
+                    Seria interessante que você entrasse em contato com eles e apresentasse nossos produtos disponíveis, incentivando uma nova compra.</p>";
+          $mensagemFinal .= "<br>Abaixo estão os clientes:<br><br>";
+          $mensagemFinal .= $tabelaClientes;
+          $mensagemFinal .= "<p>Após o contato com o cliente, por gentileza, nos envie um retorno com as informações sobre a interação.</p>";
+          $mensagemFinal .= "<br><b>Atenciosamente</b>,<br><b>Gestão</b>";
+
+          // Envia o e-mail para o vendedor
+          Mail::to($usuario->user_email)->send(new AlertaEmail($mensagem->titulo, $mensagemFinal));
+        }
+      }
+
+      // Atualiza o status dos clientes enviados
+      foreach ($clientesDoGrupo as $cliente) {
+        DB::table('cliente_potencial')
+          ->where('id', $cliente->id)
+          ->update(['status' => 2]);
+      }
+    }
+
+    // Retorna uma resposta JSON indicando que os e-mails foram enviados com sucesso
+    return response()->json(['message' => 'E-mails enviados com sucesso!']);
   }
+
 
   public function sendMessage(Request $request)
   {
